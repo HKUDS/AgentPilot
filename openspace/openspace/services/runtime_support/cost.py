@@ -3,6 +3,11 @@
 OpenSpace keeps cost accounting as an instance service with per-model usage,
 cache token accounting, unknown-model marking, session snapshot/restore, and
 formatted /cost output.
+
+Per-token prices come from the ``llm-prices`` table (dated rows read from each
+provider's pricing page). ``MODEL_COSTS`` below is only consulted for ids that
+table does not know, and anything else falls back to
+``DEFAULT_UNKNOWN_MODEL_COST`` and is flagged as unknown.
 """
 
 from __future__ import annotations
@@ -11,8 +16,11 @@ import asyncio
 import json
 import sys
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
+
+import llm_prices
 
 from openspace.llm.types import TokenUsage
 from openspace.utils.logging import Logger
@@ -169,22 +177,85 @@ def canonical_model_name(model: str) -> str:
     return normalized.lower()
 
 
+@lru_cache(maxsize=256)
+def _lookup_price(canonical: str) -> llm_prices.Price | None:
+    """Row of the llm-prices table for ``canonical``, or None when it has none.
+
+    Rows without an input or output price (embedding models, unpriced
+    previews) are treated as missing so the caller falls back.
+    """
+    price = llm_prices.lookup(canonical)
+    if price is None or price.input is None or price.output is None:
+        return None
+    return price
+
+
+def _web_search_rate(price: llm_prices.Price) -> float:
+    # Same rates as before: $10 per 1k searches for Claude (reported through
+    # usage.server_tool_use), nothing for the other providers.
+    return COST_TIER_3_15.web_search_requests if price.provider == "anthropic" else 0.0
+
+
+def _model_costs_from_price(price: llm_prices.Price) -> ModelCosts:
+    input_rate = float(price.input or 0.0)
+    return ModelCosts(
+        input_tokens=input_rate,
+        output_tokens=float(price.output or 0.0),
+        # Providers that do not charge extra for cache writes (OpenAI, Gemini,
+        # DeepSeek) list no 5-minute write price; those tokens bill as input.
+        prompt_cache_write_tokens=float(price.cache_write.get("5m", input_rate)),
+        prompt_cache_read_tokens=float(
+            price.cache_read if price.cache_read is not None else input_rate
+        ),
+        web_search_requests=_web_search_rate(price),
+    )
+
+
 def get_model_costs(model: str) -> tuple[ModelCosts, bool]:
     canonical = canonical_model_name(model)
+    price = _lookup_price(canonical)
+    if price is not None:
+        return _model_costs_from_price(price), False
     costs = MODEL_COSTS.get(canonical)
     if costs is None:
         return DEFAULT_UNKNOWN_MODEL_COST, True
     return costs, False
 
 
+def _uncached_input_tokens(usage: TokenUsage) -> int:
+    # Usage arrives through LiteLLM, whose ``prompt_tokens`` already includes
+    # cache reads and cache writes (OpenAI's cached_tokens, and Anthropic's
+    # cache_read/cache_creation counts once LiteLLM normalizes them). Bill those
+    # tokens once, at their cache rates, instead of also at the input rate.
+    cached = int(usage.cache_read_input_tokens or 0) + int(usage.cache_creation_input_tokens or 0)
+    return max(int(usage.input_tokens or 0) - cached, 0)
+
+
 def _tokens_to_usd(costs: ModelCosts, usage: TokenUsage, web_search_requests: int = 0) -> float:
     return (
-        (usage.input_tokens / 1_000_000) * costs.input_tokens
+        (_uncached_input_tokens(usage) / 1_000_000) * costs.input_tokens
         + (usage.output_tokens / 1_000_000) * costs.output_tokens
         + (usage.cache_read_input_tokens / 1_000_000) * costs.prompt_cache_read_tokens
         + (usage.cache_creation_input_tokens / 1_000_000) * costs.prompt_cache_write_tokens
         + web_search_requests * costs.web_search_requests
     )
+
+
+def _price_usage_usd(price: llm_prices.Price, usage: TokenUsage) -> float | None:
+    """Cost from the llm-prices row itself, so long-context tiers apply.
+
+    None when the row cannot price this usage (for example cache writes on a
+    model that lists no write price); the caller then uses ModelCosts.
+    """
+    breakdown = price.cost_usage(
+        llm_prices.Usage(
+            input=_uncached_input_tokens(usage),
+            output=int(usage.output_tokens or 0),
+            cache_read=int(usage.cache_read_input_tokens or 0),
+            cache_write_5m=int(usage.cache_creation_input_tokens or 0),
+        )
+    )
+    return None if breakdown is None else float(breakdown.total)
 
 
 def get_model_cost(model: str, usage: TokenUsage) -> float:
@@ -198,8 +269,13 @@ def get_model_cost_with_unknown(model: str, usage: TokenUsage) -> tuple[float, b
         provider_cost = float(usage.cost_details.upstream_inference_cost)
     if provider_cost > 0:
         return provider_cost, False
-    costs, unknown = get_model_costs(model)
     web_search_requests = int(getattr(usage, "web_search_requests", 0) or 0)
+    price = _lookup_price(canonical_model_name(model))
+    if price is not None:
+        token_cost = _price_usage_usd(price, usage)
+        if token_cost is not None:
+            return token_cost + web_search_requests * _web_search_rate(price), False
+    costs, unknown = get_model_costs(model)
     return _tokens_to_usd(costs, usage, web_search_requests), unknown
 
 

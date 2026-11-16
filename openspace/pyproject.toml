@@ -30,6 +30,7 @@ dependencies = [
     "aiohttp>=3.10.0",
     "requests>=2.32.0",
     "websockets>=13.0",
+    "llm-prices>=1.3.0,<2",  # dated per-model prices for /cost and session totals
 ]
 
 [project.optional-dependencies]
