@@ -506,7 +506,7 @@ AgentPilot/openspace/
 │   │   │   ├── grounding_client.py       # 跨后端统一接口
 │   │   │   ├── search_tools.py           # Smart Tool RAG（BM25 + embedding + LLM）
 │   │   │   ├── quality/                  # 工具质量追踪与自我进化
-│   │   │   ├── security/                 # 策略、沙箱、E2B
+│   │   │   ├── security/                 # 策略、沙箱、E2B、boxd
 │   │   │   ├── meta/                     # Meta provider 与工具
 │   │   │   ├── transport/                # 连接器与任务管理器
 │   │   │   └── tool/                     # 工具抽象（基础、本地、远程）

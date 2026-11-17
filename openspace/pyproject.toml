@@ -64,6 +64,10 @@ communication = [
     "lark-oapi>=1.4.20",
 ]
 
+boxd = [
+    "boxd>=0.3.2",
+]
+
 all = [
     "openspace[macos]; sys_platform == 'darwin'",
     "openspace[linux]; sys_platform == 'linux'",

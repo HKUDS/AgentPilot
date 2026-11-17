@@ -278,8 +278,12 @@ class SessionInfo(SessionConfig):
 
 class SandboxOptions(BaseEntity):
     api_key: str
-    """Direct API key for sandbox provider (e.g., E2B API key).
-    If not provided, will use E2B_API_KEY environment variable."""
+    """Direct API key for sandbox provider (e.g., E2B or boxd API key).
+    If not provided, will use E2B_API_KEY or BOXD_API_KEY environment variable."""
+
+    provider: Optional[str] = None
+    """Sandbox provider: 'e2b' or 'boxd'.
+    Default: 'e2b'"""
     
     sandbox_template_id: Optional[str] = None
     """Template ID for the sandbox environment.

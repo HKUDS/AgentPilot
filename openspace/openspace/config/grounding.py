@@ -171,6 +171,8 @@ class WebConfig(BackendConfig):
 class MCPConfig(BackendConfig):
     """MCP backend configuration"""
     sandbox: bool = Field(False, description="Whether to enable sandbox")
+    sandbox_provider: Literal["e2b", "boxd"] = Field("e2b", description="Sandbox provider used when sandbox is enabled: 'e2b' or 'boxd'")
+    sandbox_options: Dict[str, Any] = Field(default_factory=dict, description="Extra options for the sandbox provider, e.g. region, vcpu, memory or labels for boxd")
     auto_initialize: bool = Field(True, description="Whether to auto initialize")
     eager_sessions: bool = Field(False, description="Whether to eagerly create sessions for all servers on initialization")
     retry_interval: float = Field(2.0, ge=0.1, le=60.0, description="Wait time between retries in seconds")

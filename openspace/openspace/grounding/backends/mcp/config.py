@@ -26,6 +26,15 @@ except ImportError:
     E2BSandbox = None
     E2B_AVAILABLE = False
 
+# Import BoxdSandbox
+try:
+    from openspace.grounding.core.security.boxd_sandbox import BoxdSandbox, BOXD_AVAILABLE
+except ImportError:
+    BoxdSandbox = None
+    BOXD_AVAILABLE = False
+
+SANDBOX_PROVIDERS = ("e2b", "boxd")
+
 async def create_connector_from_config(
     server_config: dict[str, Any],
     server_name: str = "unknown",
@@ -63,8 +72,9 @@ async def create_connector_from_config(
     original_command = get_config_value(server_config, "command")
     original_args = get_config_value(server_config, "args", [])
 
-    # Check and install dependencies if needed (only for stdio servers)
-    if is_stdio_server(server_config) and check_dependencies:
+    # Check and install dependencies if needed (only for local stdio servers;
+    # a sandboxed server fetches its packages inside the sandbox)
+    if is_stdio_server(server_config) and check_dependencies and not sandbox:
         # Use provided installer or get global instance
         if installer is None:
             from .installer import get_global_installer
@@ -83,15 +93,30 @@ async def create_connector_from_config(
 
     # Sandboxed connector
     elif is_stdio_server(server_config) and sandbox:
-        if not E2B_AVAILABLE:
-            raise ImportError(
-                "E2B sandbox support not available. Please install e2b-code-interpreter: "
-                "'pip install e2b-code-interpreter'"
-            )
-        
-        # Create E2B sandbox instance
         _sandbox_options = sandbox_options or {}
-        e2b_sandbox = E2BSandbox(_sandbox_options)
+        provider = _sandbox_options.get("provider") or "e2b"
+        if provider not in SANDBOX_PROVIDERS:
+            raise ValueError(
+                f"Unknown sandbox provider '{provider}'. "
+                f"Supported providers: {', '.join(SANDBOX_PROVIDERS)}"
+            )
+
+        if provider == "boxd":
+            if not BOXD_AVAILABLE:
+                raise ImportError(
+                    "boxd sandbox support not available. Please install boxd: "
+                    "'pip install \"openspace[boxd]\"'"
+                )
+            # Create boxd sandbox instance
+            sandbox_instance = BoxdSandbox(_sandbox_options)
+        else:
+            if not E2B_AVAILABLE:
+                raise ImportError(
+                    "E2B sandbox support not available. Please install e2b-code-interpreter: "
+                    "'pip install e2b-code-interpreter'"
+                )
+            # Create E2B sandbox instance
+            sandbox_instance = E2BSandbox(_sandbox_options)
         
         # Extract timeout values from sandbox_options or use defaults
         connector_timeout = _sandbox_options.get("timeout", timeout)
@@ -99,7 +124,7 @@ async def create_connector_from_config(
         
         # Create and return sandbox connector
         return SandboxConnector(
-            sandbox=e2b_sandbox,
+            sandbox=sandbox_instance,
             command=get_config_value(server_config, "command"),
             args=get_config_value(server_config, "args"),
             env=get_config_value(server_config, "env", None),
