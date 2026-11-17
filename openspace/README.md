@@ -618,7 +618,7 @@ AgentPilot/openspace/
 │   │   │   ├── grounding_client.py       # Unified interface across all backends
 │   │   │   ├── search_tools.py           # Smart Tool RAG (BM25 + embedding + LLM)
 │   │   │   ├── quality/                  # Tool quality tracking & self-evolution
-│   │   │   ├── security/                 # Policies, sandboxing, E2B
+│   │   │   ├── security/                 # Policies, sandboxing, E2B, boxd
 │   │   │   ├── meta/                     # Meta provider & tools
 │   │   │   ├── transport/                # Connectors & task managers
 │   │   │   └── tool/                     # Tool abstraction (base, local, remote)

@@ -56,6 +56,7 @@ ignore local `.env` files; it cannot be enabled from `.env` itself.
 | `OPENSPACE_MCP_SERVERS_JSON` | MCP server definitions (JSON) | — |
 | `ANTHROPIC_API_KEY` | Optional Anthropic key for `web_search` server-side search | — |
 | `TAVILY_API_KEY` / `BRAVE_SEARCH_API_KEY` / `SERPAPI_API_KEY` | Optional fallback search provider keys | — |
+| `BOXD_API_KEY` / `BOXD_ORG` / `BOXD_REGION` | boxd key, org and region for the `boxd` MCP sandbox provider | — |
 | `OPENSPACE_WEB_FETCH_MODEL` | Optional model override for applying prompts to fetched pages | — |
 | `OPENSPACE_ENABLE_RECORDING` | Record execution traces | `true` |
 | `OPENSPACE_MAX_OUTPUT_TOKENS_RECOVERY_LIMIT` | Number of no-tool max-output recovery nudges before stopping a turn | `3` |
@@ -204,6 +205,35 @@ cp openspace/config/config_mcp.json.example openspace/config/config_mcp.json
 }
 ```
 
+### Running MCP servers in a sandbox
+
+With `"sandbox": true` in the `mcp` section of `config_grounding.json`, every stdio MCP server runs
+in a remote sandbox behind `supergateway`, and OpenSpace talks to it over HTTPS. Pick the provider
+with `sandbox_provider`:
+
+- `"e2b"` (default): an E2B sandbox. Needs `pip install e2b-code-interpreter` and `E2B_API_KEY`.
+- `"boxd"`: an isolated [boxd](https://boxd.sh/?ref=AgentPilot) machine per server. Needs
+  `pip install "openspace[boxd]"` and `BOXD_API_KEY` (optional `BOXD_ORG`, `BOXD_REGION`).
+  The server port is published at `https://<machine>.boxd.sh`. That URL is public while the
+  machine runs. The machine is deleted when the session closes, or after `delete_after` seconds
+  (default 3600), whichever comes first.
+
+```json
+{
+  "mcp": {
+    "sandbox": true,
+    "sandbox_provider": "boxd",
+    "sandbox_options": { "region": "fra", "vcpu": 2, "memory": "8G" }
+  }
+}
+```
+
+`sandbox_options` is passed to the provider. For boxd it takes `region`, `org`, `vcpu`, `memory`,
+`labels`, `name_prefix`, `from_snapshot`, `auto_suspend_timeout` and `delete_after` (seconds after
+creation, default 3600, `0` turns it off; the machine is deleted then even if the session was never
+closed, so raise it for longer runs). In sandbox mode the server's packages are fetched inside the
+sandbox, not installed on the local machine.
+
 ## 5. Execution Mode
 
 The shell backend supports only local execution. This keeps Bash sandbox
@@ -250,7 +280,7 @@ Layered system — later files override earlier ones:
 | `web.search` | `search_model`, `search_api_key`, `search_base_url`, `max_searches_per_call`, `fallback_search_provider` | Web search settings; uses provider server-side search when configured, then provider fallback |
 | `web.fetch` | `summarize_model`, `max_content_length`, `request_timeout`, `user_agent`, `preapproved_domains` | Web fetch settings; fetches URLs locally and applies a secondary model when needed |
 | `gui` | `mode`, `timeout`, `driver_type`, `screenshot_on_error`, `enable_visual_analysis`, `visual_analysis_mode`, `visual_analysis_timeout`, `visual_analysis_model` | Local/server mode, automation driver, GUI visual analysis fallback policy |
-| `mcp` | `timeout`, `sandbox`, `eager_sessions` | Request timeout (`30`s), E2B sandbox, lazy/eager server init |
+| `mcp` | `timeout`, `sandbox`, `sandbox_provider`, `sandbox_options`, `eager_sessions` | Request timeout (`30`s), sandbox on/off, sandbox provider (`"e2b"` or `"boxd"`) and its options, lazy/eager server init |
 | `tool_search` | `search_mode`, `max_tools`, `enable_llm_filter` | `"hybrid"` (semantic + LLM), max tools to return (`40`), embedding cache |
 | `tool_quality` | `enabled`, `enable_persistence`, `enable_quality_ranking` | Quality tracking for ranking and reporting |
 | `skills` | `enabled`, `skill_dirs`, `listing_enabled`, `discovery_enabled`, `discovery_max_results`, `post_tool_query_builder_*` | Skill exposure uses lightweight listing/discovery plus explicit `Skill` invocation. |

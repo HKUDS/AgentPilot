@@ -40,6 +40,8 @@ class MCPProvider(Provider[MCPSession]):
         
         # Extract MCP-specific configuration
         sandbox = get_config_value(config, "sandbox", False)
+        sandbox_provider = get_config_value(config, "sandbox_provider", "e2b")
+        extra_sandbox_options = get_config_value(config, "sandbox_options", None) or {}
         timeout = get_config_value(config, "timeout", 30)
         sse_read_timeout = get_config_value(config, "sse_read_timeout", 300.0)
         max_retries = get_config_value(config, "max_retries", 3)
@@ -54,6 +56,8 @@ class MCPProvider(Provider[MCPSession]):
         sandbox_options = None
         if sandbox:
             sandbox_options = {
+                **extra_sandbox_options,
+                "provider": sandbox_provider,
                 "timeout": timeout,
                 "sse_read_timeout": sse_read_timeout,
             }
